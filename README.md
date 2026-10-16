@@ -14,6 +14,8 @@ Spindle is pinned in `pyproject.toml` to commit `14d2379` of
 | `spindle_configs/` | Deploy configs (thin subclasses of Spindle's bundled Qwen3.5 2B / 4B recipes) |
 | `evals/common.py` | Shared sampling via `create_sampling_client(base_model=...)`, chat templating, result writing |
 | `evals/ifeval.py` | IFEval strict/loose prompt- and instruction-level accuracy (541 prompts), using lm-eval's reference checkers |
+| `evals/pricing.py` | Tinker list prices used to price each run's tokens |
+| `evals/spindle_cost.py` | Actual Modal spend of the `spindle-evals` apps, per config, from the hourly billing report |
 | `results/` | Per-example JSONL and summary JSON (git-ignored) |
 
 ## One-time server setup
@@ -64,6 +66,20 @@ IFEval downloads NLTK's `punkt_tab` on first import.
 
 The first request on a cold pool waits for an H100 sampler replica to start and load the model; Tinker retries
 the HTTP 408s until it is ready. Replicas scale to zero after 5 idle minutes.
+
+## Cost tracking: Spindle vs Tinker
+
+Each eval summary records `prompt_tokens`, `sample_tokens`, `wall_s`, UTC `started_at`/`finished_at`, and
+`tinker_list_cost_usd` (those tokens at Tinker's list price; `null` for models Tinker doesn't serve, e.g. Qwen3.5-2B).
+
+Spindle's real cost is GPU time, including cold starts and the 5-minute idle scale-down. Modal billing is hourly and
+can lag by about a day, so reconcile it afterwards for the run's window:
+
+```bash
+uv run --locked python -m evals.spindle_cost --since 2026-10-16T22:00:00 --until 2026-10-17T00:00:00
+```
+
+To measure hosted Tinker directly, run the same eval with `TINKER_BASE_URL` unset and a Tinker `TINKER_API_KEY`.
 
 ## Adding models or tasks
 

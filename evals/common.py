@@ -4,10 +4,14 @@ import argparse
 import asyncio
 import json
 import os
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import tinker
 from tinker import types
+
+from evals.pricing import tinker_list_cost
 
 
 def parser(*, max_tokens: int) -> argparse.ArgumentParser:
@@ -22,15 +26,16 @@ def parser(*, max_tokens: int) -> argparse.ArgumentParser:
     return result
 
 
-async def generate(args: argparse.Namespace, prompts: list[str]) -> list[str]:
-    """Sample one chat completion per user prompt, returning text after any thinking block."""
-    service = tinker.ServiceClient(
-        base_url=os.environ["TINKER_BASE_URL"], api_key=os.environ["TINKER_API_KEY"]
-    )
+async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[str], dict]:
+    """Sample one chat completion per user prompt; return texts after any thinking block, plus usage."""
+    # An unset TINKER_BASE_URL targets hosted Tinker, so the same eval measures both backends.
+    base_url = os.environ.get("TINKER_BASE_URL")
+    service = tinker.ServiceClient(base_url=base_url, api_key=os.environ["TINKER_API_KEY"])
     sampler = service.create_sampling_client(base_model=args.model)
     tokenizer = sampler.get_tokenizer()
     params = types.SamplingParams(max_tokens=args.max_tokens, temperature=args.temperature)
     gate = asyncio.Semaphore(args.concurrency)
+    usage = {"backend": base_url or "tinker", "prompt_tokens": 0, "sample_tokens": 0}
 
     async def complete(prompt: str) -> str:
         tokens = tokenizer.apply_chat_template(
@@ -43,13 +48,26 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> list[str]:
             response = await sampler.sample_async(
                 prompt=types.ModelInput.from_ints(tokens), num_samples=1, sampling_params=params
             )
-        text = tokenizer.decode(response.sequences[0].tokens, skip_special_tokens=True)
+        sampled = response.sequences[0].tokens
+        usage["prompt_tokens"] += len(tokens)
+        usage["sample_tokens"] += len(sampled)
+        text = tokenizer.decode(sampled, skip_special_tokens=True)
         return text.split("</think>")[-1].strip()
 
-    return await asyncio.gather(*(complete(prompt) for prompt in prompts))
+    usage["started_at"] = datetime.now(UTC).isoformat()
+    start = time.monotonic()
+    completions = await asyncio.gather(*(complete(prompt) for prompt in prompts))
+    usage["wall_s"] = round(time.monotonic() - start, 1)
+    usage["finished_at"] = datetime.now(UTC).isoformat()
+    usage["tinker_list_cost_usd"] = tinker_list_cost(
+        args.model, usage["prompt_tokens"], usage["sample_tokens"]
+    )
+    return completions, usage
 
 
-def write_results(args: argparse.Namespace, task: str, rows: list[dict], metrics: dict) -> None:
+def write_results(
+    args: argparse.Namespace, task: str, rows: list[dict], metrics: dict, usage: dict
+) -> None:
     summary = {
         "task": task,
         "model": args.model,
@@ -58,6 +76,7 @@ def write_results(args: argparse.Namespace, task: str, rows: list[dict], metrics
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
         "thinking": args.thinking,
+        **usage,
     }
     args.out.mkdir(parents=True, exist_ok=True)
     stem = f"{task}_{args.model.replace('/', '__')}"

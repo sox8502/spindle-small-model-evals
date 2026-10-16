@@ -14,7 +14,7 @@ async def main() -> None:
     if args.limit is not None:
         problems = problems.select(range(min(args.limit, len(problems))))
 
-    completions = await generate(args, [p["prompt"] for p in problems])
+    completions, usage = await generate(args, [p["prompt"] for p in problems])
 
     rows = [
         {
@@ -33,7 +33,7 @@ async def main() -> None:
         / sum(len(r[f"inst_level_{mode}_acc"]) for r in rows)
         for mode in ("strict", "loose")
     }
-    write_results(args, "ifeval", rows, metrics)
+    write_results(args, "ifeval", rows, metrics, usage)
 
 
 if __name__ == "__main__":

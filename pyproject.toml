@@ -7,8 +7,9 @@ dependencies = [
     "jinja2>=3.1.6",
     "lm-eval[ifeval]>=0.4.13",
     "modal-spindle",
+    "tinker>=0.33.1,<0.34",
     "transformers>=5.20.1",
 ]
 
 [tool.uv.sources]
-modal-spindle = { git = "https://github.com/modal-projects/spindle.git" }
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "9ad4123" }

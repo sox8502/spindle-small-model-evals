@@ -1,4 +1,4 @@
-"""Shared sampling and output helpers for evals against a Spindle (Tinker-compatible) server."""
+"""Shared sampling and output helpers for evals against Spindle or hosted Tinker (same Tinker SDK)."""
 
 import argparse
 import asyncio
@@ -16,6 +16,7 @@ from evals.pricing import tinker_list_cost
 
 def parser(*, max_tokens: int) -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
+    result.add_argument("--backend", required=True, choices=["spindle", "tinker"])
     result.add_argument("--model", required=True, help="Base model id, e.g. Qwen/Qwen3.5-2B")
     result.add_argument("--limit", type=int, default=None, help="Evaluate the first N problems")
     result.add_argument("--concurrency", type=int, default=64)
@@ -28,14 +29,17 @@ def parser(*, max_tokens: int) -> argparse.ArgumentParser:
 
 async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[str], dict]:
     """Sample one chat completion per user prompt; return texts after any thinking block, plus usage."""
-    # An unset TINKER_BASE_URL targets hosted Tinker, so the same eval measures both backends.
-    base_url = os.environ.get("TINKER_BASE_URL")
-    service = tinker.ServiceClient(base_url=base_url, api_key=os.environ["TINKER_API_KEY"])
+    if args.backend == "spindle":
+        base_url, api_key = os.environ["SPINDLE_BASE_URL"], os.environ["SPINDLE_API_KEY"]
+    else:
+        # None selects the SDK's hosted Tinker endpoint.
+        base_url, api_key = None, os.environ["TINKER_API_KEY"]
+    service = tinker.ServiceClient(base_url=base_url, api_key=api_key)
     sampler = service.create_sampling_client(base_model=args.model)
     tokenizer = sampler.get_tokenizer()
     params = types.SamplingParams(max_tokens=args.max_tokens, temperature=args.temperature)
     gate = asyncio.Semaphore(args.concurrency)
-    usage = {"backend": base_url or "tinker", "prompt_tokens": 0, "sample_tokens": 0}
+    usage = {"backend": args.backend, "base_url": base_url, "prompt_tokens": 0, "sample_tokens": 0}
 
     async def complete(prompt: str) -> str:
         tokens = tokenizer.apply_chat_template(

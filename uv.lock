@@ -732,7 +732,7 @@ wheels = [
 [[package]]
 name = "modal-spindle"
 version = "0.1.0"
-source = { git = "https://github.com/modal-projects/spindle.git#1f5ba4ff8576d6dc2294bcd992215ab4e5fb2e34" }
+source = { git = "https://github.com/modal-projects/spindle.git?rev=9ad4123#9ad41234bfecd3590e5d13acd072f38a4d138fc7" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -1412,6 +1412,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "lm-eval", extra = ["ifeval"] },
     { name = "modal-spindle" },
+    { name = "tinker" },
     { name = "transformers" },
 ]
 
@@ -1420,7 +1421,8 @@ requires-dist = [
     { name = "datasets", specifier = ">=5.1.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "lm-eval", extras = ["ifeval"], specifier = ">=0.4.13" },
-    { name = "modal-spindle", git = "https://github.com/modal-projects/spindle.git" },
+    { name = "modal-spindle", git = "https://github.com/modal-projects/spindle.git?rev=9ad4123" },
+    { name = "tinker", specifier = ">=0.33.1,<0.34" },
     { name = "transformers", specifier = ">=5.20.1" },
 ]
 
@@ -1502,7 +1504,7 @@ wheels = [
 
 [[package]]
 name = "tinker"
-version = "0.25.0"
+version = "0.33.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1520,9 +1522,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/4f/567cca8d9b87ac507f128bddc3a720ca7df5bf7bbe522be8da6670f73657/tinker-0.25.0.tar.gz", hash = "sha256:6c53009d3fb94d0f84ee9d0387882bb422a39a1c2a095878a8a3678333099b9f", size = 259638, upload-time = "2026-08-08T03:36:41.114Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/07/546ad32cedcb8267bf0371c46deb0ea86590005caeb36d15ae0f8a534838/tinker-0.33.1.tar.gz", hash = "sha256:6ccf24a8eb7c72f3b983e7de669babb25fec0a8c507a5b19498cb119e2730fca", size = 301885, upload-time = "2026-10-08T23:49:42.827Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/b0/7792f0e3a4308aabb3badf4c068b92eb07672c470ad885d8126e31bf161c/tinker-0.25.0-py3-none-any.whl", hash = "sha256:edc452500592fe78ae9d2928540737e3700765c6658032caa68705c5188e2d69", size = 247660, upload-time = "2026-08-08T03:36:39.677Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/52/e5e826fa4fa52aaf0e19de1ffcdae06fcd91409071a4e744300f071914e0/tinker-0.33.1-py3-none-any.whl", hash = "sha256:e9b0d1b5849638b0b76e9e0167393de93331fafb348e2924f1cc9a140c74bf26", size = 287595, upload-time = "2026-10-08T23:49:41.169Z" },
 ]
 
 [[package]]

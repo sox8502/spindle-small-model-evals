@@ -4,8 +4,8 @@ Evaluate small open models by sampling through a self-hosted
 [Spindle](https://modal.com/docs/guide/spindle) server on Modal. The server speaks the Tinker API, so eval scripts
 are plain Tinker SDK clients; GPUs are only allocated on Modal while sampling.
 
-Spindle is pinned in `pyproject.toml` to commit `14d2379` of
-[modal-projects/spindle](https://github.com/modal-projects/spindle). It requires Python 3.12.
+Spindle is pinned in `pyproject.toml` to commit `9ad4123` of
+[modal-projects/spindle](https://github.com/modal-projects/spindle). It requires Python 3.12. The Tinker SDK is pinned to 0.33.x, which both Spindle and hosted Tinker accept.
 
 ## Layout
 
@@ -40,12 +40,13 @@ modal secret create spindle-proxy \
 uv run --locked spindle deploy spindle_configs/*.py
 ```
 
-Save the `server` URL printed by the deploy. `run_evals.sh` reads both values from
-`~/.config/spindle-evals/env` (keep it `chmod 600`, outside the repo):
+Save the `server` URL printed by the deploy. `run_evals.sh` reads credentials from
+`~/.config/spindle-evals/env` (keep it `chmod 600`, outside the repo). `TINKER_*` is reserved for hosted Tinker:
 
 ```bash
-TINKER_BASE_URL=https://<server>.modal.run
-TINKER_API_KEY=tml-...
+SPINDLE_BASE_URL=https://<server>.modal.run
+SPINDLE_API_KEY=tml-...     # the key stored in spindle-evals-api
+TINKER_API_KEY=tml-...      # optional: a hosted Tinker key from the Tinker console
 ```
 
 ## Run an eval
@@ -53,14 +54,14 @@ TINKER_API_KEY=tml-...
 `bash run_evals.sh` runs IFEval on every model in the script. For a single ad-hoc eval:
 
 ```bash
-export TINKER_BASE_URL='https://<server>.modal.run'
-export TINKER_API_KEY='<spindle api key>'
+set -a; . ~/.config/spindle-evals/env; set +a
 
-uv run --locked python -m evals.ifeval --model Qwen/Qwen3.5-2B --limit 20   # smoke test
-uv run --locked python -m evals.ifeval --model Qwen/Qwen3.5-4B              # all 541 prompts
+uv run --locked python -m evals.ifeval --backend spindle --model Qwen/Qwen3.5-2B --limit 20   # smoke test
+uv run --locked python -m evals.ifeval --backend spindle --model Qwen/Qwen3.5-4B              # all 541 prompts
+uv run --locked python -m evals.ifeval --backend tinker  --model Qwen/Qwen3.5-4B              # hosted Tinker
 ```
 
-Evals accept `--limit`, `--concurrency`, `--max-tokens`, `--temperature` (default greedy) and `--thinking`
+`--backend` is required and is recorded in each summary. Evals also accept `--limit`, `--concurrency`, `--max-tokens`, `--temperature` (default greedy) and `--thinking`
 (enables the Qwen chat template's thinking mode; the thinking block is stripped before scoring).
 IFEval downloads NLTK's `punkt_tab` on first import.
 
@@ -79,7 +80,7 @@ can lag by about a day, so reconcile it afterwards for the run's window:
 uv run --locked python -m evals.spindle_cost --since 2026-10-16T22:00:00 --until 2026-10-17T00:00:00
 ```
 
-To measure hosted Tinker directly, run the same eval with `TINKER_BASE_URL` unset and a Tinker `TINKER_API_KEY`.
+To measure hosted Tinker directly, run the same eval with `--backend tinker`.
 
 ## Adding models or tasks
 

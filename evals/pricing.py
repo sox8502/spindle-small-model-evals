@@ -5,6 +5,8 @@ TINKER_PRICES = {
     "Qwen/Qwen3.5-4B": (0.33, 1.005),
     "Qwen/Qwen3.5-9B": (0.30, 0.807),
     "Qwen/Qwen3-8B": (0.195, 0.60),
+    # Limited-time discounted rate (list: 0.368, 0.99).
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": (0.184, 0.495),
 }
 
 

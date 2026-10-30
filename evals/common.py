@@ -53,6 +53,8 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[s
                 prompt=types.ModelInput.from_ints(tokens), num_samples=1, sampling_params=params
             )
         sampled = response.sequences[0].tokens
+        # Approximates cold start plus queueing; the rest of wall_s is sampling.
+        usage.setdefault("first_result_s", round(time.monotonic() - start, 1))
         usage["prompt_tokens"] += len(tokens)
         usage["sample_tokens"] += len(sampled)
         text = tokenizer.decode(sampled, skip_special_tokens=True)

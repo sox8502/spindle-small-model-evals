@@ -12,4 +12,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "9ad4123" }
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "v0.1.4" }

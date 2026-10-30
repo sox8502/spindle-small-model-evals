@@ -4,14 +4,14 @@ Evaluate small open models by sampling through a self-hosted
 [Spindle](https://modal.com/docs/guide/spindle) server on Modal. The server speaks the Tinker API, so eval scripts
 are plain Tinker SDK clients; GPUs are only allocated on Modal while sampling.
 
-Spindle is pinned in `pyproject.toml` to commit `9ad4123` of
+Spindle is pinned in `pyproject.toml` to release `v0.1.4` of
 [modal-projects/spindle](https://github.com/modal-projects/spindle). It requires Python 3.12. The Tinker SDK is pinned to 0.33.x, which both Spindle and hosted Tinker accept.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `spindle_configs/` | Deploy configs (thin subclasses of Spindle's bundled Qwen3.5 2B / 4B recipes) |
+| `spindle_configs/` | Deploy configs (thin subclasses of Spindle's bundled Qwen3.5 2B/4B/9B and Nemotron-3.5-Lightning recipes) |
 | `evals/common.py` | Shared sampling via `create_sampling_client(base_model=...)`, chat templating, result writing |
 | `evals/ifeval.py` | IFEval strict/loose prompt- and instruction-level accuracy (541 prompts), using lm-eval's reference checkers |
 | `evals/pricing.py` | Tinker list prices used to price each run's tokens |
@@ -70,7 +70,7 @@ the HTTP 408s until it is ready. Replicas scale to zero after 5 idle minutes.
 
 ## Cost tracking: Spindle vs Tinker
 
-Each eval summary records `prompt_tokens`, `sample_tokens`, `wall_s`, UTC `started_at`/`finished_at`, and
+Each eval summary records `prompt_tokens`, `sample_tokens`, `wall_s`, `first_result_s` (cold start plus queueing), UTC `started_at`/`finished_at`, and
 `tinker_list_cost_usd` (those tokens at Tinker's list price; `null` for models Tinker doesn't serve, e.g. Qwen3.5-2B).
 
 Spindle's real cost is GPU time, including cold starts and the 5-minute idle scale-down. Modal billing is hourly and
@@ -90,4 +90,4 @@ To measure hosted Tinker directly, run the same eval with `--backend tinker`.
 
 ## Teardown
 
-`modal app list`, then `modal app stop` the `spindle-fft-*` sampler apps first and the `spindle-evals` frontend last.
+`modal app list`, then `modal app stop` the `spindle-lora-evals-*` sampler apps first and the `spindle-evals` frontend last.

@@ -14,6 +14,7 @@ Spindle is pinned in `pyproject.toml` to release `v0.1.4` of
 | `spindle_configs/` | Deploy configs (thin subclasses of Spindle's bundled Qwen3.5 2B/4B/9B and Nemotron-3.5-Lightning recipes) |
 | `evals/common.py` | Shared sampling via `create_sampling_client(base_model=...)`, chat templating, result writing |
 | `evals/ifeval.py` | IFEval strict/loose prompt- and instruction-level accuracy (541 prompts), using lm-eval's reference checkers |
+| `evals/math500.py` | MATH-500 (500 problems), k samples per problem (default 4, temperature 0.6, 2,048 max tokens); mean accuracy over k and pass@k via `math_verify` |
 | `evals/pricing.py` | Tinker list prices used to price each run's tokens |
 | `evals/spindle_cost.py` | Actual Modal spend of the `spindle-evals` apps, per config, from the hourly billing report |
 | `results/` | Per-example JSONL and summary JSON (git-ignored) |
@@ -61,7 +62,7 @@ uv run --locked python -m evals.ifeval --backend spindle --model Qwen/Qwen3.5-4B
 uv run --locked python -m evals.ifeval --backend tinker  --model Qwen/Qwen3.5-4B              # hosted Tinker
 ```
 
-`--backend` is required and is recorded in each summary. Evals also accept `--limit`, `--concurrency`, `--max-tokens`, `--temperature` (default greedy) and `--thinking`
+`--backend` is required and is recorded in each summary. Evals also accept `--limit`, `--concurrency`, `--max-tokens`, `--temperature`, `--num-samples` and `--thinking`
 (enables the Qwen chat template's thinking mode; the thinking block is stripped before scoring).
 IFEval downloads NLTK's `punkt_tab` on first import.
 
@@ -70,7 +71,7 @@ the HTTP 408s until it is ready. Replicas scale to zero after 5 idle minutes.
 
 ## Cost tracking: Spindle vs Tinker
 
-Each eval summary records `prompt_tokens`, `sample_tokens`, `wall_s`, `first_result_s` (cold start plus queueing), UTC `started_at`/`finished_at`, and
+Each eval summary records `prompt_tokens`, `sample_tokens`, `truncated` (samples that hit `--max-tokens`), `wall_s`, `first_result_s` (cold start plus queueing), UTC `started_at`/`finished_at`, and
 `tinker_list_cost_usd` (those tokens at Tinker's list price; `null` for models Tinker doesn't serve, e.g. Qwen3.5-2B).
 
 Spindle's real cost is GPU time, including cold starts and the 5-minute idle scale-down. Modal billing is hourly and

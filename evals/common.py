@@ -14,21 +14,22 @@ from tinker import types
 from evals.pricing import tinker_list_cost
 
 
-def parser(*, max_tokens: int) -> argparse.ArgumentParser:
+def parser(*, max_tokens: int, temperature: float = 0.0, num_samples: int = 1) -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     result.add_argument("--backend", required=True, choices=["spindle", "tinker"])
     result.add_argument("--model", required=True, help="Base model id, e.g. Qwen/Qwen3.5-2B")
     result.add_argument("--limit", type=int, default=None, help="Evaluate the first N problems")
     result.add_argument("--concurrency", type=int, default=64)
     result.add_argument("--max-tokens", type=int, default=max_tokens)
-    result.add_argument("--temperature", type=float, default=0.0)
+    result.add_argument("--temperature", type=float, default=temperature)
+    result.add_argument("--num-samples", type=int, default=num_samples, help="Completions per prompt")
     result.add_argument("--thinking", action="store_true", help="Enable the chat template's thinking mode")
     result.add_argument("--out", type=Path, default=Path("results"))
     return result
 
 
-async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[str], dict]:
-    """Sample one chat completion per user prompt; return texts after any thinking block, plus usage."""
+async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[list[str]], dict]:
+    """Sample --num-samples chat completions per user prompt; return texts after any thinking block, plus usage."""
     if args.backend == "spindle":
         base_url, api_key = os.environ["SPINDLE_BASE_URL"], os.environ["SPINDLE_API_KEY"]
     else:
@@ -39,9 +40,16 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[s
     tokenizer = sampler.get_tokenizer()
     params = types.SamplingParams(max_tokens=args.max_tokens, temperature=args.temperature)
     gate = asyncio.Semaphore(args.concurrency)
-    usage = {"backend": args.backend, "base_url": base_url, "prompt_tokens": 0, "sample_tokens": 0}
+    usage = {
+        "backend": args.backend,
+        "base_url": base_url,
+        "num_samples": args.num_samples,
+        "prompt_tokens": 0,
+        "sample_tokens": 0,
+        "truncated": 0,
+    }
 
-    async def complete(prompt: str) -> str:
+    async def complete(prompt: str) -> list[str]:
         tokens = tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],
             add_generation_prompt=True,
@@ -50,15 +58,20 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[s
         )["input_ids"]
         async with gate:
             response = await sampler.sample_async(
-                prompt=types.ModelInput.from_ints(tokens), num_samples=1, sampling_params=params
+                prompt=types.ModelInput.from_ints(tokens),
+                num_samples=args.num_samples,
+                sampling_params=params,
             )
-        sampled = response.sequences[0].tokens
         # Approximates cold start plus queueing; the rest of wall_s is sampling.
         usage.setdefault("first_result_s", round(time.monotonic() - start, 1))
         usage["prompt_tokens"] += len(tokens)
-        usage["sample_tokens"] += len(sampled)
-        text = tokenizer.decode(sampled, skip_special_tokens=True)
-        return text.split("</think>")[-1].strip()
+        texts = []
+        for sequence in response.sequences:
+            usage["sample_tokens"] += len(sequence.tokens)
+            usage["truncated"] += len(sequence.tokens) >= args.max_tokens
+            text = tokenizer.decode(sequence.tokens, skip_special_tokens=True)
+            texts.append(text.split("</think>")[-1].strip())
+        return texts
 
     usage["started_at"] = datetime.now(UTC).isoformat()
     start = time.monotonic()

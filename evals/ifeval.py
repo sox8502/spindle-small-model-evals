@@ -20,10 +20,10 @@ async def main() -> None:
         {
             "key": problem["key"],
             "instruction_id_list": problem["instruction_id_list"],
-            **process_results(problem, [completion]),
-            "completion": completion,
+            **process_results(problem, [samples[0]]),
+            "completion": samples[0],
         }
-        for problem, completion in zip(problems, completions)
+        for problem, samples in zip(problems, completions)
     ]
     metrics = {
         f"prompt_level_{mode}_acc": sum(r[f"prompt_level_{mode}_acc"] for r in rows) / len(rows)

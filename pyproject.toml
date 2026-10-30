@@ -6,6 +6,7 @@ dependencies = [
     "datasets>=5.1.0",
     "jinja2>=3.1.6",
     "lm-eval[ifeval]>=0.4.13",
+    "math-verify[antlr4-13-2]>=0.9.0",
     "modal-spindle",
     "tinker>=0.33.1,<0.34",
     "transformers>=5.20.1",

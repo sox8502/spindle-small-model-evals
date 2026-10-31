@@ -9,6 +9,8 @@ class Config(Parent):
     platform = deepcopy(Parent.platform)
     platform["frontend"] = "spindle-evals"
     platform["secrets"]["api"] = "spindle-evals-api"
+    # One saturated replica; autoscaled extras became ready after sampling ended and only idled.
+    inference_max_replicas = 1
 
 
 config = Config()

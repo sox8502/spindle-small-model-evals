@@ -24,6 +24,7 @@ def parser(*, max_tokens: int, temperature: float = 0.0, num_samples: int = 1) -
     result.add_argument("--temperature", type=float, default=temperature)
     result.add_argument("--num-samples", type=int, default=num_samples, help="Completions per prompt")
     result.add_argument("--thinking", action="store_true", help="Enable the chat template's thinking mode")
+    result.add_argument("--request-timeout", type=float, default=1800, help="Seconds before one request fails the run")
     result.add_argument("--out", type=Path, default=Path("results"))
     return result
 
@@ -57,10 +58,14 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
             tokenize=True,
         )["input_ids"]
         async with gate:
-            response = await sampler.sample_async(
-                prompt=types.ModelInput.from_ints(tokens),
-                num_samples=args.num_samples,
-                sampling_params=params,
+            # A lost server session otherwise leaves requests pending forever.
+            response = await asyncio.wait_for(
+                sampler.sample_async(
+                    prompt=types.ModelInput.from_ints(tokens),
+                    num_samples=args.num_samples,
+                    sampling_params=params,
+                ),
+                timeout=args.request_timeout,
             )
         # Approximates cold start plus queueing; the rest of wall_s is sampling.
         usage.setdefault("first_result_s", round(time.monotonic() - start, 1))

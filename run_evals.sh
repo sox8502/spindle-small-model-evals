@@ -8,6 +8,7 @@ uv run --locked python - <<'SETUP'
 import os
 import modal
 modal.Secret.objects.create("spindle-rerun1103-api", {"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]}, allow_existing=True, environment_name="main")
+modal.Secret.from_name("spindle-rerun1103-api", environment_name="main").update({"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]})
 SETUP
 uv run --locked spindle deploy --env main spindle_configs/qwen35_4b.py spindle_configs/qwen35_9b.py spindle_configs/nemotron35_lightning.py
 export SPINDLE_BASE_URL="$(uv run --locked python - <<'URL'

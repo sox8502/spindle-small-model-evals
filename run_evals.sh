@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# SPINDLE_BASE_URL / SPINDLE_API_KEY (and TINKER_API_KEY for hosted Tinker) live outside the repo.
-set -a; . "$HOME/.config/spindle-evals/env"; set +a
-
+export PYTHONUNBUFFERED=1
+export MODAL_ENVIRONMENT=main
+uv sync --locked
+uv run --locked python - <<'SETUP'
+import os
+import modal
+modal.Secret.objects.create("spindle-rerun1103-api", {"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]}, allow_existing=True, environment_name="main")
+SETUP
+uv run --locked spindle deploy --env main spindle_configs/qwen35_4b.py spindle_configs/qwen35_9b.py spindle_configs/nemotron35_lightning.py
+export SPINDLE_BASE_URL="$(uv run --locked python - <<'URL'
+import modal
+print(modal.Function.from_name("spindle-rerun1103", "server", environment_name="main").get_web_url())
+URL
+)"
 for model in Qwen/Qwen3.5-4B Qwen/Qwen3.5-9B nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16; do
-  # Both benchmarks share one sampler session per model.
   uv run --locked python -m evals.ifeval --backend spindle --model "$model"
   uv run --locked python -m evals.math500 --backend spindle --model "$model"
 done

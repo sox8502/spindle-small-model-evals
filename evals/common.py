@@ -36,7 +36,7 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
     else:
         # None selects the SDK's hosted Tinker endpoint.
         base_url, api_key = None, os.environ["TINKER_API_KEY"]
-    service = tinker.ServiceClient(base_url=base_url, api_key=api_key)
+    service = tinker.ServiceClient(base_url=base_url, api_key=api_key, user_metadata={"orx_run_id": os.environ.get("ORX_RUN_ID", "local")})
     sampler = service.create_sampling_client(base_model=args.model)
     tokenizer = sampler.get_tokenizer()
     params = types.SamplingParams(max_tokens=args.max_tokens, temperature=args.temperature)

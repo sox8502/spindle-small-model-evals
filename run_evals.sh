@@ -3,6 +3,7 @@ set -euo pipefail
 export PYTHONUNBUFFERED=1
 export MODAL_ENVIRONMENT=main
 uv sync --locked
+export SPINDLE_API_KEY="$(uv run --locked python -c 'import secrets; print("tml-spindle-" + secrets.token_urlsafe(32))')"
 uv run --locked python - <<'SETUP'
 import os
 import modal

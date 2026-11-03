@@ -24,6 +24,7 @@ def parser(*, max_tokens: int, temperature: float = 0.0, num_samples: int = 1) -
     result.add_argument("--temperature", type=float, default=temperature)
     result.add_argument("--num-samples", type=int, default=num_samples, help="Completions per prompt")
     result.add_argument("--thinking", action="store_true", help="Enable the chat template's thinking mode")
+    result.add_argument("--request-timeout", type=float, default=1800, help="Seconds before one request fails the run")
     result.add_argument("--out", type=Path, default=Path("results"))
     return result
 
@@ -35,7 +36,7 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
     else:
         # None selects the SDK's hosted Tinker endpoint.
         base_url, api_key = None, os.environ["TINKER_API_KEY"]
-    service = tinker.ServiceClient(base_url=base_url, api_key=api_key)
+    service = tinker.ServiceClient(base_url=base_url, api_key=api_key, user_metadata={"orx_run_id": os.environ.get("ORX_RUN_ID", "local")})
     sampler = service.create_sampling_client(base_model=args.model)
     tokenizer = sampler.get_tokenizer()
     params = types.SamplingParams(max_tokens=args.max_tokens, temperature=args.temperature)
@@ -49,7 +50,10 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
         "truncated": 0,
     }
 
+    completed = 0
+
     async def complete(prompt: str) -> list[str]:
+        nonlocal completed
         tokens = tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],
             add_generation_prompt=True,
@@ -57,10 +61,14 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
             tokenize=True,
         )["input_ids"]
         async with gate:
-            response = await sampler.sample_async(
-                prompt=types.ModelInput.from_ints(tokens),
-                num_samples=args.num_samples,
-                sampling_params=params,
+            # A lost server session otherwise leaves requests pending forever.
+            response = await asyncio.wait_for(
+                sampler.sample_async(
+                    prompt=types.ModelInput.from_ints(tokens),
+                    num_samples=args.num_samples,
+                    sampling_params=params,
+                ),
+                timeout=args.request_timeout,
             )
         # Approximates cold start plus queueing; the rest of wall_s is sampling.
         usage.setdefault("first_result_s", round(time.monotonic() - start, 1))
@@ -71,8 +79,12 @@ async def generate(args: argparse.Namespace, prompts: list[str]) -> tuple[list[l
             usage["truncated"] += len(sequence.tokens) >= args.max_tokens
             text = tokenizer.decode(sequence.tokens, skip_special_tokens=True)
             texts.append(text.split("</think>")[-1].strip())
+        completed += 1
+        if completed == 1 or completed % 50 == 0 or completed == len(prompts):
+            print(json.dumps({"event": "progress", "backend": args.backend, "model": args.model, "completed": completed, "total": len(prompts), "elapsed_s": round(time.monotonic() - start, 1)}), flush=True)
         return texts
 
+    print(json.dumps({"event": "sampling_start", "backend": args.backend, "model": args.model, "prompts": len(prompts), "concurrency": args.concurrency, "num_samples": args.num_samples}), flush=True)
     usage["started_at"] = datetime.now(UTC).isoformat()
     start = time.monotonic()
     completions = await asyncio.gather(*(complete(prompt) for prompt in prompts))

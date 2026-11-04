@@ -4,11 +4,13 @@ from spindle.configs.nemotron35_lightning_30b_a3b_lora_64k import Config as Pare
 
 
 class Config(Parent):
-    name = "rerun1103-nemotron35-lightning"
+    name = "one1103-nemotron35-lightning"
     # Own frontend and API secret so this project never collides with another Spindle deployment.
     platform = deepcopy(Parent.platform)
-    platform["frontend"] = "spindle-rerun1103"
-    platform["secrets"]["api"] = "spindle-rerun1103-api"
+    platform["frontend"] = "spindle-one1103"
+    platform["secrets"]["api"] = "spindle-one1103-api"
+
+    inference_max_replicas = 1
 
 
 config = Config()

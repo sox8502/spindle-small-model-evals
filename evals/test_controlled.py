@@ -1,9 +1,10 @@
 """Offline checks of the request-concurrency and timing measurement contract."""
 import asyncio
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
-from evals.controlled import percentile, sample_batch
+from evals.controlled import percentile, reject_suspension, sample_batch
 
 
 class FakeSampler:
@@ -54,6 +55,11 @@ class ControlledMeasurementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sampler.maximum, 1)
         self.assertEqual(summary['sample_tokens'], 12)
         self.assertLessEqual(summary['request_latency_p50_s'], summary['request_latency_p95_s'])
+
+    def test_rejects_host_sleep_instead_of_reporting_inflated_throughput(self):
+        with patch('evals.controlled.elapsed_clock', return_value=100), patch('evals.controlled.time.monotonic', return_value=20):
+            with self.assertRaisesRegex(RuntimeError, 'Host suspended'):
+                reject_suspension(10, 10)
 
     def test_percentile_interpolation(self):
         self.assertEqual(percentile([1, 2, 3, 4, 5], .5), 3)

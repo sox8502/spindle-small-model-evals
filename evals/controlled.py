@@ -8,6 +8,7 @@ import os
 import random
 import statistics
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,7 @@ from evals.math500 import INSTRUCTION
 from evals.pricing import TINKER_PRICES
 
 OUT = Path("results/controlled")
-PREFIX = "ctl1103"
+PREFIX = "ctlg1103"
 MODELS = {
     "qwen35-4b": "Qwen/Qwen3.5-4B",
     "qwen35-9b": "Qwen/Qwen3.5-9B",
@@ -29,12 +30,25 @@ MODELS = {
 CONCURRENCIES = [1, 8, 16, 32, 64]
 
 
+def elapsed_clock():
+    # macOS time.monotonic() excludes host sleep; CLOCK_MONOTONIC includes it.
+    clock = getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC)
+    return time.clock_gettime(clock)
+
+
+def reject_suspension(started, awake_started):
+    suspended = elapsed_clock() - started - (time.monotonic() - awake_started)
+    if abs(suspended) > 2:
+        raise RuntimeError(f"Host suspended during benchmark: clock difference {suspended:.3f}s")
+
+
 def now():
     return datetime.now(UTC).isoformat()
 
 
 def emit(event, **values):
-    print(json.dumps(dict(event=event, timestamp=now(), **values)), flush=True)
+    sys.stdout.write(json.dumps(dict(event=event, timestamp=now(), **values)) + "\n")
+    sys.stdout.flush()
 
 
 def save(path, value):
@@ -105,18 +119,19 @@ async def sample_batch(sampler, prompts, params, num_samples, concurrency, conte
     pending = iter(enumerate(prompts))
     responses = []
     started_utc = now()
-    started = time.monotonic()
+    started = elapsed_clock()
+    awake_started = time.monotonic()
     finished = []
 
     async def worker():
         for index, prompt in pending:
-            dispatched = time.monotonic()
+            dispatched = elapsed_clock()
             dispatched_utc = now()
             response = await asyncio.wait_for(sampler.sample_async(
                 prompt=types.ModelInput.from_ints(prompt["input_ids"]),
                 num_samples=num_samples, sampling_params=params,
             ), timeout=1800)
-            completed = time.monotonic()
+            completed = elapsed_clock()
             responses.append((index, prompt, response, dispatched, completed, dispatched_utc, now()))
             finished.append(completed)
             if len(responses) == 1 or len(responses) % 16 == 0 or len(responses) == len(prompts):
@@ -124,7 +139,8 @@ async def sample_batch(sampler, prompts, params, num_samples, concurrency, conte
                      elapsed_s=round(completed - started, 3))
 
     await asyncio.gather(*(worker() for _ in range(min(concurrency, len(prompts)))))
-    ended = time.monotonic()
+    ended = elapsed_clock()
+    reject_suspension(started, awake_started)
     finished_utc = now()
     records = []
     for index, prompt, response, dispatched, completed, dispatched_utc, completed_utc in responses:
@@ -158,7 +174,7 @@ async def sample_batch(sampler, prompts, params, num_samples, concurrency, conte
         request_latency_p50_s=statistics.median(latencies),
         request_latency_p95_s=percentile(latencies, 0.95),
         request_latency_p99_s=percentile(latencies, 0.99),
-        ttft_s=None, measurement="warm native-API batch; pretokenized inputs; no client decoding/scoring",
+        ttft_s=None, timer="sleep-inclusive monotonic", measurement="warm native-API batch; pretokenized inputs; no client decoding/scoring",
     )
     return summary, records
 
@@ -223,6 +239,10 @@ async def run_model(short, data):
         for repeat in range(2):
             tasks = ["ifeval", "math500"] if repeat == 0 else ["math500", "ifeval"]
             for task in tasks:
+                if repeat == 0 and task == "ifeval":
+                    emit("reuse_validated_phases", model=model, task=task, repeat=repeat,
+                         source_run_id="c527d650-9968-4721-8a38-d362e567b652")
+                    continue
                 spec = data[task]
                 concurrencies = CONCURRENCIES if repeat == 0 else list(reversed(CONCURRENCIES))
                 for concurrency in concurrencies:
@@ -258,7 +278,9 @@ async def run_model(short, data):
 
 async def heartbeat():
     while True:
+        started, awake_started = elapsed_clock(), time.monotonic()
         await asyncio.sleep(15)
+        reject_suspension(started, awake_started)
         emit("controller_heartbeat")
 
 
@@ -269,14 +291,11 @@ async def main():
     emit("protocol", concurrency=CONCURRENCIES, repeats=2, ifeval_prompts=128,
          math_prompts=64, math_samples=4, fixed_spindle_workers=1, thinking=False,
          first_token_timestamps_available=False, run_id=os.environ["ORX_RUN_ID"])
-    pulse = asyncio.create_task(heartbeat())
-    try:
-        async with asyncio.TaskGroup() as group:
-            for model in MODELS:
-                group.create_task(run_model(model, data))
-    finally:
+    async with asyncio.TaskGroup() as group:
+        pulse = group.create_task(heartbeat())
+        jobs = [group.create_task(run_model(model, data)) for model in MODELS]
+        await asyncio.gather(*jobs)
         pulse.cancel()
-        await asyncio.gather(pulse, return_exceptions=True)
     emit("suite_complete")
 
 

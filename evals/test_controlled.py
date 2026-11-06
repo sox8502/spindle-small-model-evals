@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from evals.controlled import percentile, reject_suspension, sample_batch
+from evals.controlled import percentile, reject_suspension, sample_batch, workload
 
 
 class FakeSampler:
@@ -60,6 +60,18 @@ class ControlledMeasurementTests(unittest.IsolatedAsyncioTestCase):
         with patch('evals.controlled.elapsed_clock', return_value=100), patch('evals.controlled.time.monotonic', return_value=20):
             with self.assertRaisesRegex(RuntimeError, 'Host suspended'):
                 reject_suspension(10, 10)
+
+    def test_autoscaling_defaults_and_reference_workload(self):
+        from spindle_configs.qwen35_4b import config as small
+        from spindle_configs.qwen35_9b import config as medium
+        from spindle_configs.nemotron35_lightning import config as large
+        for cfg,maximum,target in [(small,8,32),(medium,8,16),(large,4,64)]:
+            self.assertEqual((cfg.inference_min_replicas,cfg.inference_max_replicas),(0,maximum))
+            self.assertEqual(cfg.inference_target_concurrency,target)
+            self.assertEqual((cfg.pool_idle_timeout_s,cfg.session_idle_timeout_s),(300,300))
+        data=workload()
+        self.assertEqual((len(data['ifeval']['rows']),len(data['math500']['rows'])),(128,64))
+        self.assertEqual((data['ifeval']['num_samples'],data['math500']['num_samples']),(1,4))
 
     def test_percentile_interpolation(self):
         self.assertEqual(percentile([1, 2, 3, 4, 5], .5), 3)

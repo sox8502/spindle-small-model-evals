@@ -5,7 +5,6 @@ import asyncio
 import hashlib
 import json
 import os
-import random
 import statistics
 import subprocess
 import sys
@@ -14,14 +13,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import tinker
-from datasets import load_dataset
 from tinker import types
 
-from evals.math500 import INSTRUCTION
 from evals.pricing import TINKER_PRICES
 
 OUT = Path("results/controlled")
-PREFIX = "ctlg1103"
+PREFIX = "auto1105"
 MODELS = {
     "qwen35-4b": "Qwen/Qwen3.5-4B",
     "qwen35-9b": "Qwen/Qwen3.5-9B",
@@ -78,23 +75,7 @@ def cleanup(model=None):
 
 
 def workload():
-    result = {}
-    for task, dataset, split, count, samples, maximum, temperature in [
-        ("ifeval", "google/IFEval", "train", 128, 1, 1280, 0.0),
-        ("math500", "HuggingFaceH4/MATH-500", "test", 64, 4, 2048, 0.6),
-    ]:
-        data = load_dataset(dataset, split=split)
-        indices = sorted(random.Random(1729).sample(range(len(data)), count))
-        rows = []
-        for index in indices:
-            row = data[index]
-            prompt = row["prompt"] if task == "ifeval" else f"{row['problem']}\n\n{INSTRUCTION}"
-            rows.append(dict(index=index, key=str(row.get("key", row.get("unique_id"))), prompt=prompt))
-        result[task] = dict(
-            dataset=dataset, fingerprint=data._fingerprint, rows=rows,
-            num_samples=samples, max_tokens=maximum, temperature=temperature,
-        )
-    return result
+    return json.loads(Path('reference/controlled/workload-manifest.json').read_text())
 
 
 def prepare(tokenizer, rows):
@@ -206,7 +187,7 @@ async def run_model(short, data):
     model = MODELS[short]
     clients = {}
     prepared = {}
-    for backend in ["tinker", "spindle"]:
+    for backend in ["spindle"]:
         service = await asyncio.to_thread(tinker.ServiceClient,
             base_url=os.environ["SPINDLE_BASE_URL"] if backend == "spindle" else None,
             api_key=os.environ["SPINDLE_API_KEY"] if backend == "spindle" else os.environ["TINKER_API_KEY"],
@@ -217,8 +198,9 @@ async def run_model(short, data):
         clients[backend] = (service, sampler)
         prepared[backend] = {task: prepare(tokenizer, spec["rows"]) for task, spec in data.items()}
         emit("session_ready", model=model, backend=backend, console_url=service.get_console_url())
-    assert prepared["tinker"] == prepared["spindle"], "Backends rendered different prompt token IDs"
-    save(OUT / short / "prompt-token-manifest.json", prepared["tinker"])
+    reference = json.loads(Path(f'reference/controlled/{short}-prompt-token-manifest.json').read_text())
+    assert prepared['spindle'] == reference, 'Prompt tokens differ from the fixed-worker/Tinker runs'
+    save(OUT / short / "prompt-token-manifest.json", prepared["spindle"])
 
     async def warm(backend, phase, concurrency=32):
         sampler = clients[backend][1]
@@ -231,18 +213,15 @@ async def run_model(short, data):
     await asyncio.gather(*(warm(backend, "initial-warmup") for backend in clients))
     server = f"spindle-lora-{PREFIX}-{short}/Server"
     info = await asyncio.to_thread(modal_cli, "server", "info", server, "--json")
-    assert info["max_containers"] == 1 and info["min_containers"] == 1, info
+    maximum = 4 if short == 'nemotron35-lightning' else 8
+    assert info['max_containers'] == maximum and info['min_containers'] == 0, info
     save(OUT / short / "server-info.json", info)
-    emit("fixed_worker_verified", model=model, object_id=info["object_id"],
-         gpus=info["gpus"], min_containers=1, max_containers=1)
+    emit("default_autoscaling_verified", model=model, object_id=info["object_id"],
+         gpus=info["gpus"], min_containers=0, max_containers=maximum)
     try:
         for repeat in range(2):
             tasks = ["ifeval", "math500"] if repeat == 0 else ["math500", "ifeval"]
             for task in tasks:
-                if repeat == 0 and task == "ifeval":
-                    emit("reuse_validated_phases", model=model, task=task, repeat=repeat,
-                         source_run_id="c527d650-9968-4721-8a38-d362e567b652")
-                    continue
                 spec = data[task]
                 concurrencies = CONCURRENCIES if repeat == 0 else list(reversed(CONCURRENCIES))
                 for concurrency in concurrencies:
@@ -270,7 +249,10 @@ async def run_model(short, data):
                         "--json")
                     save(OUT / short / f"{phase}-server-stats.json", stats)
                     assert stats["container_error_count"] == 0, stats
-                    assert stats["container_total_count"] <= 1, "Worker replacement during measured phase"
+                    metrics = await asyncio.to_thread(modal_cli, 'server', 'metrics', info['object_id'],
+                        '--since', summaries[0]['started_at'], '--group', 'containers', '--group', 'gpu',
+                        '--bucket-size', '1m', '--json')
+                    save(OUT / short / f'{phase}-worker-metrics.json', metrics)
         emit("model_complete", model=model)
     finally:
         await asyncio.to_thread(cleanup, short)
@@ -282,6 +264,13 @@ async def heartbeat():
         await asyncio.sleep(15)
         reject_suspension(started, awake_started)
         emit("controller_heartbeat")
+        apps = await asyncio.to_thread(modal_cli, 'app', 'list', '--json')
+        snapshot = dict(timestamp=now(), apps=[dict(name=a['description'], app_id=a['app_id'],
+            state=a['state'], tasks=int(a['tasks'])) for a in apps
+            if a['description'].startswith(f'spindle-lora-{PREFIX}-')])
+        with (OUT/'worker-timeline.jsonl').open('a') as handle:
+            handle.write(json.dumps(snapshot)+'\n')
+        emit('worker_snapshot', **{k:v for k,v in snapshot.items() if k!='timestamp'})
 
 
 async def main():
@@ -289,9 +278,12 @@ async def main():
     data = await asyncio.to_thread(workload)
     save(OUT / "workload-manifest.json", data)
     emit("protocol", concurrency=CONCURRENCIES, repeats=2, ifeval_prompts=128,
-         math_prompts=64, math_samples=4, fixed_spindle_workers=1, thinking=False,
+         math_prompts=64, math_samples=4, spindle_min_workers=0, spindle_max_workers=[8,8,4],
+         spindle_default_autoscaling=True, spindle_target_concurrency=[32,16,64],
+         pool_idle_timeout_s=300, session_idle_timeout_s=300, reused_baseline_run_ids=['822fee2a-efb1-4112-865a-be28c196867e',
+         'c527d650-9968-4721-8a38-d362e567b652'], thinking=False,
          first_token_timestamps_available=False, run_id=os.environ["ORX_RUN_ID"])
-    async with asyncio.TaskGroup() as group:
+    async with asyncio.timeout(3600), asyncio.TaskGroup() as group:
         pulse = group.create_task(heartbeat())
         jobs = [group.create_task(run_model(model, data)) for model in MODELS]
         await asyncio.gather(*jobs)

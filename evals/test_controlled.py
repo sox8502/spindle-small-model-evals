@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from evals.controlled import percentile, reject_suspension, sample_batch, workload
+from evals.controlled import percentile, reject_suspension, sample_batch, workload, validate_autoscaling
 
 
 class FakeSampler:
@@ -72,6 +72,14 @@ class ControlledMeasurementTests(unittest.IsolatedAsyncioTestCase):
         data=workload()
         self.assertEqual((len(data['ifeval']['rows']),len(data['math500']['rows'])),(128,64))
         self.assertEqual((data['ifeval']['num_samples'],data['math500']['num_samples']),(1,4))
+
+    def test_modal_unset_minimum_means_no_warm_worker_requirement(self):
+        validate_autoscaling(dict(max_containers=8,min_containers=None),8)
+        validate_autoscaling(dict(max_containers=8,min_containers=0),8)
+        with self.assertRaises(AssertionError):
+            validate_autoscaling(dict(max_containers=8,min_containers=1),8)
+        with self.assertRaises(AssertionError):
+            validate_autoscaling(dict(max_containers=1,min_containers=None),8)
 
     def test_percentile_interpolation(self):
         self.assertEqual(percentile([1, 2, 3, 4, 5], .5), 3)

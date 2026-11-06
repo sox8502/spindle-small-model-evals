@@ -18,7 +18,7 @@ from tinker import types
 from evals.pricing import TINKER_PRICES
 
 OUT = Path("results/controlled")
-PREFIX = "auto1105"
+PREFIX = "auto1105r2"
 MODELS = {
     "qwen35-4b": "Qwen/Qwen3.5-4B",
     "qwen35-9b": "Qwen/Qwen3.5-9B",
@@ -58,6 +58,10 @@ def modal_cli(*args):
         ["modal", *args, "--env", "main"], text=True, capture_output=True, check=True
     )
     return json.loads(process.stdout) if process.stdout.strip() else None
+
+
+def validate_autoscaling(info, maximum):
+    assert info['max_containers'] == maximum and info['min_containers'] in (None, 0), info
 
 
 def cleanup(model=None):
@@ -214,7 +218,7 @@ async def run_model(short, data):
     server = f"spindle-lora-{PREFIX}-{short}/Server"
     info = await asyncio.to_thread(modal_cli, "server", "info", server, "--json")
     maximum = 4 if short == 'nemotron35-lightning' else 8
-    assert info['max_containers'] == maximum and info['min_containers'] == 0, info
+    validate_autoscaling(info, maximum)
     save(OUT / short / "server-info.json", info)
     emit("default_autoscaling_verified", model=model, object_id=info["object_id"],
          gpus=info["gpus"], min_containers=0, max_containers=maximum)

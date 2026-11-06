@@ -9,13 +9,13 @@ export SPINDLE_API_KEY="$(uv run --locked python -c 'import secrets; print("tml-
 uv run --locked python - <<'SETUP'
 import os
 import modal
-modal.Secret.objects.create("spindle-auto1105-api", {"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]}, allow_existing=True, environment_name="main")
-modal.Secret.from_name("spindle-auto1105-api", environment_name="main").update({"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]})
+modal.Secret.objects.create("spindle-auto1105r2-api", {"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]}, allow_existing=True, environment_name="main")
+modal.Secret.from_name("spindle-auto1105r2-api", environment_name="main").update({"TINKER_API_KEY": os.environ["SPINDLE_API_KEY"]})
 SETUP
 uv run --locked spindle deploy --env main spindle_configs/qwen35_4b.py spindle_configs/qwen35_9b.py spindle_configs/nemotron35_lightning.py
 export SPINDLE_BASE_URL="$(uv run --locked python - <<'URL'
 import modal
-print(modal.Function.from_name("spindle-auto1105", "server", environment_name="main").get_web_url())
+print(modal.Function.from_name("spindle-auto1105r2", "server", environment_name="main").get_web_url())
 URL
 )"
 uv run --locked python -m evals.controlled

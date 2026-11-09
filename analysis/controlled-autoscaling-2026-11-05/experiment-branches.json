@@ -1,0 +1,46 @@
+[
+  {
+    "branch": "orx/controlled-warm-throughput-default-autoscaling-t",
+    "commit": "6c2fe0728c6785f2c92580be19fe12600747825b"
+  },
+  {
+    "branch": "orx/controlled-warm-throughput-matched-concurrency-a",
+    "commit": "88433fff38b8dc9e1067e2236ffcd56500ce0981"
+  },
+  {
+    "branch": "orx/ifeval-math-500-x4-on-spindle-4b-9b-nemotron",
+    "commit": "d6e2a2933d9bb56632f2bc4a01e21260ceb87e1d"
+  },
+  {
+    "branch": "orx/ifeval-on-hosted-tinker-qwen3-5-4b-9b-nemotron-3",
+    "commit": "a344a90cb559d3fba2415942fe4c00d8e4ac2273"
+  },
+  {
+    "branch": "orx/ifeval-qwen3-5-2b-and-4b",
+    "commit": "0a79231b4ec3eae5a8ea3b7f4c5c819fc2fc6d2b"
+  },
+  {
+    "branch": "orx/math-500-x4-on-tinker-4b-9b-nemotron",
+    "commit": "05a45791a186728b17e1a487a48958a90e626b0b"
+  },
+  {
+    "branch": "orx/myles-configuration-rerun-one-replica-per-model",
+    "commit": "0fa01a40d5914c36bb46ed02344a154cd7ab9003"
+  },
+  {
+    "branch": "orx/one-replica-per-model-ifeval-math-500-x4-on-spin",
+    "commit": "b8ad890d78801fb66942a7ddea7cd1cff853a6b4"
+  },
+  {
+    "branch": "orx/parallel-rerun-default-spindle-v0-1-4",
+    "commit": "1c92942e0230ac17127bcdce9ebef26cfa8966c8"
+  },
+  {
+    "branch": "orx/parallel-rerun-hosted-tinker",
+    "commit": "7d88b709657b827c24235d58b064de39d6366f98"
+  },
+  {
+    "branch": "orx/spindle-v0-1-4-after-modal-s-fix-ifeval-4b-9b-ne",
+    "commit": "fb32e68b9cc19e5171283067490d931f7d5c7dd2"
+  }
+]

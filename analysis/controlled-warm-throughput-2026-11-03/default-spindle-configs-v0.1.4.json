@@ -1,0 +1,79 @@
+{
+  "version": "v0.1.4",
+  "source": "installed pinned package recipe instances; no deployment overrides",
+  "configs": [
+    {
+      "name": "qwen35-4b-lora-32k",
+      "model": "Qwen/Qwen3.5-4B",
+      "inference_gpu": "H100",
+      "inference_gpus_per_node": 1,
+      "inference_cpu": 8,
+      "inference_memory_mib": 32768,
+      "max_context_length": 32768,
+      "inference_min_replicas": 0,
+      "inference_max_replicas": 8,
+      "inference_target_concurrency": 32,
+      "sglang_cfg": {
+        "tp_size": 1,
+        "mem_fraction_static": 0.85,
+        "max_running_requests": 64,
+        "max_queued_requests": 8,
+        "max_loaded_loras": 64,
+        "max_loras_per_batch": 8
+      },
+      "pool_idle_timeout_s": 300,
+      "session_idle_timeout_s": 300
+    },
+    {
+      "name": "qwen35-9b-instruct-lora-16k",
+      "model": "Qwen/Qwen3.5-9B",
+      "inference_gpu": "H200",
+      "inference_gpus_per_node": 1,
+      "inference_cpu": 8,
+      "inference_memory_mib": 32768,
+      "max_context_length": 16384,
+      "inference_min_replicas": 0,
+      "inference_max_replicas": 8,
+      "inference_target_concurrency": 16,
+      "sglang_cfg": {
+        "tp_size": 1,
+        "ep_size": 1,
+        "mem_fraction_static": 0.8,
+        "max_running_requests": 32,
+        "max_queued_requests": 8,
+        "max_loaded_loras": 256,
+        "max_loras_per_batch": 8,
+        "schedule_policy": "lpm"
+      },
+      "pool_idle_timeout_s": 300,
+      "session_idle_timeout_s": 300
+    },
+    {
+      "name": "nemotron35-lightning-30b-a3b-lora-64k",
+      "model": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+      "inference_gpu": "H200",
+      "inference_gpus_per_node": 1,
+      "inference_cpu": 8,
+      "inference_memory_mib": 131072,
+      "max_context_length": 65536,
+      "inference_min_replicas": 0,
+      "inference_max_replicas": 4,
+      "inference_target_concurrency": 64,
+      "sglang_cfg": {
+        "tp_size": 1,
+        "dtype": "bfloat16",
+        "moe_runner_backend": "triton",
+        "mem_fraction_static": 0.8,
+        "max_running_requests": 128,
+        "max_queued_requests": 32,
+        "max_loaded_loras": 32,
+        "max_loras_per_batch": 4,
+        "lora_strict_loading": true,
+        "schedule_policy": "lpm",
+        "trust_remote_code": true
+      },
+      "pool_idle_timeout_s": 300,
+      "session_idle_timeout_s": 300
+    }
+  ]
+}

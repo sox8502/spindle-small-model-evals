@@ -1,94 +1,80 @@
-# Spindle evals
+# Spindle Small Model Evals
 
-Evaluate small open models by sampling through a self-hosted
-[Spindle](https://modal.com/docs/guide/spindle) server on Modal. The server speaks the Tinker API, so eval scripts
-are plain Tinker SDK clients; GPUs are only allocated on Modal while sampling.
+Evaluation code and measured comparisons of hosted Tinker against Spindle v0.1.4 on Modal, using Qwen3.5-4B, Qwen3.5-9B and NVIDIA Nemotron-3.5-Lightning-30B-A3B.
 
-Spindle is pinned in `pyproject.toml` to release `v0.1.4` of
-[modal-projects/spindle](https://github.com/modal-projects/spindle). It requires Python 3.12. The Tinker SDK is pinned to 0.33.x, which both Spindle and hosted Tinker accept.
+## Final comparison
 
-## Layout
+![Throughput comparison](analysis/controlled-autoscaling-2026-11-05/figures/throughput-three-series.png)
 
-| Path | Purpose |
-| --- | --- |
-| `spindle_configs/` | Deploy configs (thin subclasses of Spindle's bundled Qwen3.5 2B/4B/9B and Nemotron-3.5-Lightning recipes) |
-| `evals/common.py` | Shared sampling via `create_sampling_client(base_model=...)`, chat templating, result writing |
-| `evals/ifeval.py` | IFEval strict/loose prompt- and instruction-level accuracy (541 prompts), using lm-eval's reference checkers |
-| `evals/math500.py` | MATH-500 (500 problems), k samples per problem (default 4, temperature 0.6, 2,048 max tokens); mean accuracy over k and pass@k via `math_verify` |
-| `evals/pricing.py` | Tinker list prices used to price each run's tokens |
-| `evals/spindle_cost.py` | Actual Modal spend of the `spindle-evals` apps, per config, from the hourly billing report |
-| `results/` | Per-example JSONL and summary JSON (git-ignored) |
+![Batch cost comparison](analysis/controlled-autoscaling-2026-11-05/figures/cost-three-series.png)
 
-## One-time server setup
+Three settings: **Tinker**, **Spindle fixed at one worker per model**, and **Spindle default autoscaling**. Each benchmark/model has five client-concurrency settings (1, 8, 16, 32, 64) and two passes. The second pass reverses both task and concurrency order.
+
+- IFEval performance subset: 128 prompts, one response each, max 1,280 tokens, greedy.
+- MATH-500 performance subset: 64 problems, four responses each, max 2,048 tokens, temperature 0.6.
+- Spindle worker hardware: 4B = 1 H100 / 8 CPU cores / 32 GiB RAM; 9B = 1 H200 / 8 cores / 32 GiB; Nemotron = 1 H200 / 8 cores / 128 GiB.
+- Default worker ranges are 0–8 / 0–8 / 0–4. Asterisks mark default autoscaling targets of 32 / 16 / 64 per worker, not default client load or enabled autoscaling in the fixed-worker series.
+
+Throughput is completed output tokens divided by the native-API batch duration. Initial loading/probes are excluded; scale-up and retries during a measured batch remain included. There are no first-token timestamps. Whiskers show the range of two passes, not confidence intervals. Tinker's GPU allocation is unknown, and its measurements were taken earlier than the autoscaling run.
+
+Costs are **billing-backed allocations to measured batches**, not directly returned per-request charges. Tinker uses saved token counts at invoice-derived effective rates; Spindle uses hourly worker bills allocated by GPU time (one-minute GPU samples for autoscaling). Outside-batch charges and shared frontend are excluded. Capacity was not reset between phases: the default 300-second scale-down window can retain idle GPUs from an earlier phase or warm-up, so low-concurrency autoscaling costs depend on sweep order and are not steady-state costs. The scripts' older `published_rate_cost_estimate_usd` fields are historical list-rate estimates, not the source of the final billed-cost bars.
+
+## Branches behind these charts
+
+| Series | Experiment branch | Recorded commit(s) | Run ID(s) |
+|---|---|---|---|
+| Tinker + fixed-worker Spindle | [`orx/controlled-warm-throughput-matched-concurrency-a`](https://github.com/sox8502/spindle-small-model-evals/tree/orx/controlled-warm-throughput-matched-concurrency-a) | [`88433ff`](https://github.com/sox8502/spindle-small-model-evals/commit/88433fff38b8dc9e1067e2236ffcd56500ce0981), retained IFEval from `0d84dc3` | `822fee2a-efb1-4112-865a-be28c196867e`; retained phases from `c527d650-9968-4721-8a38-d362e567b652` |
+| Default-autoscaling Spindle | [`orx/controlled-warm-throughput-default-autoscaling-t`](https://github.com/sox8502/spindle-small-model-evals/tree/orx/controlled-warm-throughput-default-autoscaling-t) | [`6c2fe07`](https://github.com/sox8502/spindle-small-model-evals/commit/6c2fe07) | `9242dae2-1a02-4ba4-bf46-efe71a22527f` |
+
+The first controlled attempt was interrupted by host sleep. Only 30 validated IFEval phases from before suspension were retained; all affected work was excluded and MATH was rerun. The autoscaling attempt at `88dde0e` failed a preflight check before any measured batch; `6c2fe07` accepts Modal's unset minimum-worker representation and ran successfully.
+
+[`main`](https://github.com/sox8502/spindle-small-model-evals/tree/main) contains the latest autoscaling source plus this publication index, final plotting code, and aggregate data. Recorded experiment branches and their commits are preserved unchanged. See [all experiment branches](docs/experiments.md).
+
+## Reproduce the charts without GPUs
+
+Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
+
+```bash
+uv run --no-project analysis/controlled-autoscaling-2026-11-05/figures/plot_comparison.py
+```
+
+The plotting script declares its own matplotlib/numpy dependencies. It reads the included [aggregate measurements](analysis/controlled-autoscaling-2026-11-05/aggregated-results.json) and [recipe defaults](analysis/controlled-warm-throughput-2026-11-03/default-spindle-configs-v0.1.4.json), and regenerates PNG, SVG and PDF. [CSV values](analysis/controlled-autoscaling-2026-11-05/chart-data.csv) are also included. In the JSON, `total_*` fields sum both passes; plotted values and other unsuffixed metrics are two-pass means, with `_min`/`_max` recording their range. The final cost chart uses `allocated_billed_cost_usd`; the older `active_window_cost_estimate_usd` fields are historical estimates.
+
+## Run the evaluations
+
+Python 3.12 and authenticated Modal access to an environment named `main` are required (the environment is hard-coded in `run_evals.sh` and `evals/controlled.py`). `pyproject.toml` pins Spindle to v0.1.4 and the Tinker SDK to 0.33.x; `uv.lock` records dependencies.
 
 ```bash
 uv sync --locked
+uv run --locked python -m unittest evals.test_controlled
+```
+
+Check out the experiment branch you want before launching. The current `bash run_evals.sh` runs the **autoscaling-only** sweep; the matched-concurrency branch runs the Tinker/fixed-worker controller (its last revision reuses validated first-pass IFEval, so use the recorded source/provenance when reproducing the complete combined series). The public main branch includes the saved `reference/controlled/` inputs for the autoscaling sweep; the older controller selects its prompts from the benchmark datasets.
+
+Running the sweep launches paid Modal GPUs. Authenticate with your own Modal account, and create the proxy-token secret expected by the bundled recipes (these commands configure your account):
+
+```bash
 export MODAL_ENVIRONMENT=main
-
-# The configs use their own `spindle-evals` frontend and `spindle-evals-api` secret.
-export TINKER_API_KEY="tml-$(openssl rand -hex 32)"
-modal secret create spindle-evals-api TINKER_API_KEY="$TINKER_API_KEY"
-
-modal workspace proxy-tokens create          # prints Modal-Key / Modal-Secret
-export MODAL_PROXY_TOKEN_ID='<Modal-Key>'
-export MODAL_PROXY_TOKEN_SECRET='<Modal-Secret>'
-modal workspace proxy-tokens allow "$MODAL_PROXY_TOKEN_ID" "$MODAL_ENVIRONMENT"
-modal secret create spindle-proxy \
+uv run --locked modal workspace proxy-tokens create
+# Set these to the Modal-Key and Modal-Secret returned above:
+export MODAL_PROXY_TOKEN_ID='<your-Modal-Key>'
+export MODAL_PROXY_TOKEN_SECRET='<your-Modal-Secret>'
+uv run --locked modal workspace proxy-tokens allow "$MODAL_PROXY_TOKEN_ID" "$MODAL_ENVIRONMENT"
+uv run --locked modal secret create spindle-proxy \
   MODAL_PROXY_TOKEN_ID="$MODAL_PROXY_TOKEN_ID" \
   MODAL_PROXY_TOKEN_SECRET="$MODAL_PROXY_TOKEN_SECRET"
-
-# Always pass config files: a bare `spindle deploy` deploys every bundled model.
-uv run --locked spindle deploy spindle_configs/*.py
 ```
 
-Save the `server` URL printed by the deploy. `run_evals.sh` reads credentials from
-`~/.config/spindle-evals/env` (keep it `chmod 600`, outside the repo). `TINKER_*` is reserved for hosted Tinker:
+The bundled recipes also reference `huggingface-secret`; provision that secret with your own `HF_TOKEN` for weight downloads. Hosted Tinker runs additionally require your own `TINKER_API_KEY`. Never put either token in Git.
+
+The original research runner supplies `ORX_RUN_ID` automatically. For a direct standalone run, supply any unique metadata label:
 
 ```bash
-SPINDLE_BASE_URL=https://<server>.modal.run
-SPINDLE_API_KEY=tml-...     # the key stored in spindle-evals-api
-TINKER_API_KEY=tml-...      # optional: a hosted Tinker key from the Tinker console
+ORX_RUN_ID=manual-autoscaling-run bash run_evals.sh
 ```
 
-## Run an eval
+The run script creates an isolated frontend credential and cleans up its worker apps on exit. On macOS it prevents sleep for the controller's lifetime. If sharing a Modal workspace, rename the deployment prefix consistently in `run_evals.sh`, `evals/controlled.py` (`PREFIX`), and the three model configuration files in `spindle_configs/`.
 
-`bash run_evals.sh` runs IFEval on every model in the script. For a single ad-hoc eval:
+The standalone modules `evals/ifeval.py`, `evals/math500.py`, `evals/spindle_cost.py` and the 2B configuration are retained from earlier full-suite experiments; they are not the controlled sweep entry point.
 
-```bash
-set -a; . ~/.config/spindle-evals/env; set +a
-
-uv run --locked python -m evals.ifeval --backend spindle --model Qwen/Qwen3.5-2B --limit 20   # smoke test
-uv run --locked python -m evals.ifeval --backend spindle --model Qwen/Qwen3.5-4B              # all 541 prompts
-uv run --locked python -m evals.ifeval --backend tinker  --model Qwen/Qwen3.5-4B              # hosted Tinker
-```
-
-`--backend` is required and is recorded in each summary. Evals also accept `--limit`, `--concurrency`, `--max-tokens`, `--temperature`, `--num-samples` and `--thinking`
-(enables the Qwen chat template's thinking mode; the thinking block is stripped before scoring).
-IFEval downloads NLTK's `punkt_tab` on first import.
-
-The first request on a cold pool waits for an H100 sampler replica to start and load the model; Tinker retries
-the HTTP 408s until it is ready. Replicas scale to zero after 5 idle minutes.
-
-## Cost tracking: Spindle vs Tinker
-
-Each eval summary records `prompt_tokens`, `sample_tokens`, `truncated` (samples that hit `--max-tokens`), `wall_s`, `first_result_s` (cold start plus queueing), UTC `started_at`/`finished_at`, and
-`tinker_list_cost_usd` (those tokens at Tinker's list price; `null` for models Tinker doesn't serve, e.g. Qwen3.5-2B).
-
-Spindle's real cost is GPU time, including cold starts and the 5-minute idle scale-down. Modal billing is hourly and
-can lag by about a day, so reconcile it afterwards for the run's window:
-
-```bash
-uv run --locked python -m evals.spindle_cost --since 2026-10-16T22:00:00 --until 2026-10-17T00:00:00
-```
-
-To measure hosted Tinker directly, run the same eval with `--backend tinker`.
-
-## Adding models or tasks
-
-- **Model:** `uv run --locked spindle config init --preset <bundled_config_name>` prints a subclass to save in
-  `spindle_configs/`; redeploy with all config files.
-- **Task:** add a module under `evals/` that builds prompts, calls `evals.common.generate`, scores, and calls `write_results`.
-
-## Teardown
-
-`modal app list`, then `modal app stop` the `spindle-lora-evals-*` sampler apps first and the `spindle-evals` frontend last.
+Raw cloud logs, account billing responses, credentials and local research-tool configuration are not included in this publication. The public aggregate data is sufficient to regenerate the two charts; recalculating allocations from raw billing requires the account-side records.
